@@ -14,7 +14,11 @@ Auto fill Intraday & OI data for Vol2Vol indicator on TradingView.
 
 ## Requirements
 
-Install Tampermonkey first.
+## Install Tampermonkey first.
+
+<a href="https://www.tampermonkey.net/">
+<img src="https://img.shields.io/badge/DOWNLOAD-Tampermonkey-green?style=for-the-badge&logo=tampermonkey">
+</a>
 
 ---
 
