@@ -19,7 +19,7 @@
     const URL_OI       = "https://raw.githubusercontent.com/pageth/Vol2VolData/main/OIData.txt";
     const UPDATE_INTERVAL_MS = 100000;
     const TABLE_OFFSET_X = 200;
-    const TABLE_OFFSET_Y = 120;
+    const TABLE_OFFSET_Y = 300;
 
     let lastPopup = null;
     let isUpdatingStealth = false;
