@@ -188,6 +188,7 @@
         }
     }
 
+    // --- MAIN OBSERVER & TIMERS ---
     const observer = new MutationObserver(() => handleManualMode());
     observer.observe(document.body, { childList: true, subtree: true });
 
@@ -195,5 +196,12 @@
         autoUpdateRoutine();
         setInterval(autoUpdateRoutine, UPDATE_INTERVAL_MS);
     }, 5000);
+
+    setInterval(() => {
+        const adBox = document.querySelector('[id="charting-ad"]');
+        if (adBox) {
+            adBox.closest('[role="log"]')?.remove();
+        }
+    }, 100);
 
 })();
