@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      2.0
+// @version      1.0
 // @description  Auto fill Intraday & OI Data
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
@@ -154,16 +154,25 @@
         if (taOI) setColor(taOI, "#6b6b00");
 
         const data = await fetchAll();
+        let isSuccess = false;
 
         if (taIntraday) {
-            if (data.intraday) { fillReact(taIntraday, data.intraday); setColor(taIntraday, "#006400"); }
+            if (data.intraday) { fillReact(taIntraday, data.intraday); setColor(taIntraday, "#006400"); isSuccess = true; }
             else setColor(taIntraday, "#8B0000");
             setTimeout(() => taIntraday.style.background = "", 2000);
         }
         if (taOI) {
-            if (data.oi) { fillReact(taOI, data.oi); setColor(taOI, "#006400"); }
+            if (data.oi) { fillReact(taOI, data.oi); setColor(taOI, "#006400"); isSuccess = true; }
             else setColor(taOI, "#8B0000");
             setTimeout(() => taOI.style.background = "", 2000);
+        }
+
+        if (isSuccess) {
+            cachedIntraday = data.intraday;
+            cachedOI = data.oi;
+            showStatusNotify(true);
+        } else {
+            showStatusNotify(false);
         }
     }
 
