@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      1.0
+// @version      2.0
 // @description  Auto fill Intraday & OI Data
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
@@ -34,7 +34,7 @@
         `);
     }
 
-    function showStatusNotify(isSuccess, isSkip = false) {
+    function showStatusNotify(isSuccess) {
         const existing = document.getElementById('tv-auto-notify');
         if (existing) existing.remove();
 
@@ -52,9 +52,9 @@
             text-shadow: 0px 1px 3px rgba(0,0,0,0.5); 
             border-radius: 4px;
             color: white;
-            background: ${isSkip ? 'rgba(100,100,100,0.7)' : 'transparent'};
+            background: ${isSuccess ? 'rgba(0,100,0,0.8)' : 'rgba(139,0,0,0.8)'};
         `;
-        notify.innerHTML = isSkip ? '💤 ไม่มีข้อมูลใหม่' : (isSuccess ? '✅' : '❌');
+        notify.innerHTML = isSuccess ? '✅' : '❌';
         document.body.appendChild(notify);
 
         setTimeout(() => {
@@ -179,7 +179,7 @@
         }
 
         if (data.intraday === cachedIntraday && data.oi === cachedOI) {
-            showStatusNotify(true, true);
+            showStatusNotify(true);
             isUpdatingStealth = false;
             return;
         }
