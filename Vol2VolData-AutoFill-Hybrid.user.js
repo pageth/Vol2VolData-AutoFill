@@ -2,11 +2,12 @@
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
 // @version      1.0
-// @description  Auto fill Intraday & OI Data (Hybrid)
+// @description  Auto fill Intraday & OI Data
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
 // @icon         https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/refs/heads/main/tradingview.ico
 // @grant        GM_xmlhttpRequest
+// @grant        GM_addStyle
 // @connect      raw.githubusercontent.com
 // @downloadURL  https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/main/Vol2VolData-AutoFill-Hybrid.user.js
 // @updateURL    https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/main/Vol2VolData-AutoFill-Hybrid.user.js
@@ -15,50 +16,96 @@
 (function () {
     "use strict";
 
+    const TARGET_NAMES = ['Round Numbers', 'Gamma Options', 'Vol2Vol']; 
     const URL_INTRADAY = "https://raw.githubusercontent.com/pageth/Vol2VolData/main/IntradayData.txt";
     const URL_OI       = "https://raw.githubusercontent.com/pageth/Vol2VolData/main/OIData.txt";
     const UPDATE_INTERVAL_MS = 100000;
-    const TABLE_OFFSET_X = 200;
-    const TABLE_OFFSET_Y = 100;
 
     let lastPopup = null;
     let isUpdatingStealth = false;
+    let initialLoadComplete = false;
+    
+    let cachedIntraday = null;
+    let cachedOI = null;
 
-    // --- MINIMAL NOTIFICATION ---
-    function showStatusNotify(isSuccess) {
-        const notify = document.createElement('div');
-        notify.style.cssText = `
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            padding: 5px;
-            font-size: 20px;
-            z-index: 10000;
-            pointer-events: none;
-            transition: opacity 0.3s ease;
-        `;
-        notify.innerHTML = isSuccess ? '✅' : '❌';
-        document.body.appendChild(notify);
-
-        // แสดงเพียง 1 วินาทีแล้วหายไป
-        setTimeout(() => {
-            notify.style.opacity = '0';
-            setTimeout(() => notify.remove(), 300);
-        }, 1000);
+    if (typeof GM_addStyle !== "undefined") {
+        GM_addStyle(`
+            #charting-ad, [id^="toast-"], div[class*="toast-"] { display: none !important; }
+        `);
     }
 
-    // --- HELPER FUNCTIONS ---
+    function showStatusNotify(isSuccess, isSkip = false) {
+        const existing = document.getElementById('tv-auto-notify');
+        if (existing) existing.remove();
+
+        const notify = document.createElement('div');
+        notify.id = 'tv-auto-notify';
+        notify.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 4px 8px;
+            font-size: 16px; 
+            z-index: 2147483647; 
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+            text-shadow: 0px 1px 3px rgba(0,0,0,0.5); 
+            border-radius: 4px;
+            color: white;
+            background: ${isSkip ? 'rgba(100,100,100,0.7)' : 'transparent'};
+        `;
+        notify.innerHTML = isSkip ? '💤 ไม่มีข้อมูลใหม่' : (isSuccess ? '✅' : '❌');
+        document.body.appendChild(notify);
+
+        setTimeout(() => {
+            notify.style.opacity = '0';
+            setTimeout(() => notify.remove(), 500);
+        }, 2000);
+    }
+
     function setColor(el, color) {
         if (!el) return;
         el.style.transition = "background 0.2s";
         el.style.background = color;
     }
 
-    function clearTooltip(target, x, y) {
-        const outOptions = { clientX: x, clientY: y, bubbles: true };
-        target.dispatchEvent(new MouseEvent('mouseleave', outOptions));
-        target.dispatchEvent(new MouseEvent('mouseout', outOptions));
-        document.body.dispatchEvent(new MouseEvent('mousemove', { clientX: 0, clientY: 0, bubbles: true }));
+    function simulateClick(el) {
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + (rect.width / 2) || 0;
+        const cy = rect.top + (rect.height / 2) || 0;
+        const opts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy };
+        el.dispatchEvent(new MouseEvent('mousedown', opts));
+        el.dispatchEvent(new MouseEvent('mouseup', opts));
+        el.dispatchEvent(new MouseEvent('click', opts));
+    }
+
+    function simulateRealisticDoubleClick(el) {
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + (rect.width / 2) || 0;
+        const cy = rect.top + (rect.height / 2) || 0;
+        const opts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy };
+        
+        el.dispatchEvent(new MouseEvent('mouseenter', opts));
+        el.dispatchEvent(new MouseEvent('mouseover', opts));
+        el.dispatchEvent(new MouseEvent('mousedown', opts));
+        el.dispatchEvent(new MouseEvent('mouseup', opts));
+        el.dispatchEvent(new MouseEvent('click', opts));
+        el.dispatchEvent(new MouseEvent('mousedown', opts));
+        el.dispatchEvent(new MouseEvent('mouseup', opts));
+        el.dispatchEvent(new MouseEvent('click', opts));
+        el.dispatchEvent(new MouseEvent('dblclick', opts));
+    }
+
+    function findTargetElement() {
+        let legendItems = Array.from(document.querySelectorAll('[data-qa-id="legend-source-item"], [class*="sourceItem-"]'));
+        for (let item of legendItems) {
+            if (TARGET_NAMES.some(name => item.textContent.includes(name))) {
+                return item.querySelector('[data-qa-id="title-wrapper legend-source-title"], [class*="mainTitle-"]') || item;
+            }
+        }
+        return null;
     }
 
     function fetchURL(url) {
@@ -96,7 +143,6 @@
         return { taIntraday, taOI };
     }
 
-    // --- MODE 1: MANUAL DETECTOR ---
     async function handleManualMode() {
         const { taIntraday, taOI } = findTextareas();
         if (!taIntraday && !taOI) return;
@@ -121,7 +167,6 @@
         }
     }
 
-    // --- MODE 2: STEALTH AUTO-UPDATE ---
     async function autoUpdateRoutine() {
         if (isUpdatingStealth) return;
         isUpdatingStealth = true;
@@ -129,6 +174,12 @@
         const data = await fetchAll();
         if (!data.intraday && !data.oi) {
             showStatusNotify(false);
+            isUpdatingStealth = false;
+            return;
+        }
+
+        if (data.intraday === cachedIntraday && data.oi === cachedOI) {
+            showStatusNotify(true, true);
             isUpdatingStealth = false;
             return;
         }
@@ -146,30 +197,34 @@
         document.head.appendChild(styleEl);
 
         try {
-            const clickX = window.innerWidth - TABLE_OFFSET_X;
-            const clickY = TABLE_OFFSET_Y;
-            const target = document.elementFromPoint(clickX, clickY) || document.body;
-            const eventOptions = { clientX: clickX, clientY: clickY, bubbles: true, cancelable: true };
+            let targetEl = findTargetElement();
+            if (!targetEl) throw new Error("Target not found");
 
-            target.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-            target.dispatchEvent(new MouseEvent('mouseup', eventOptions));
-            target.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-            target.dispatchEvent(new MouseEvent('mouseup', eventOptions));
-            target.dispatchEvent(new MouseEvent('dblclick', eventOptions));
+            simulateRealisticDoubleClick(targetEl);
 
-            clearTooltip(target, clickX, clickY);
+            let textareasFound = false;
+            for (let i = 0; i < 40; i++) { 
+                const { taIntraday, taOI } = findTextareas();
+                if (taIntraday || taOI) {
+                    if (taIntraday && data.intraday) fillReact(taIntraday, data.intraday);
+                    if (taOI && data.oi) fillReact(taOI, data.oi);
+                    textareasFound = true;
+                    break;
+                }
+                await new Promise(r => setTimeout(r, 50)); 
+            }
 
-            await new Promise(r => setTimeout(r, 1500));
+            if (!textareasFound) throw new Error("Popup inputs not loaded in time");
 
-            const { taIntraday, taOI } = findTextareas();
-            if (taIntraday && data.intraday) fillReact(taIntraday, data.intraday);
-            if (taOI && data.oi) fillReact(taOI, data.oi);
-
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 50));
 
             const okBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim().match(/^(OK|ตกลง)$/i));
             if (okBtn) {
-                okBtn.click();
+                simulateClick(okBtn);
+                
+                cachedIntraday = data.intraday;
+                cachedOI = data.oi;
+                
                 showStatusNotify(true);
             } else {
                 document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -179,29 +234,38 @@
         } catch (e) {
             showStatusNotify(false);
         } finally {
-            setTimeout(() => {
-                const s = document.getElementById(styleId);
-                if (s) s.remove();
-                isUpdatingStealth = false;
-                lastPopup = null;
-            }, 1000);
+            const s = document.getElementById(styleId);
+            if (s) s.remove();
+            isUpdatingStealth = false;
+            lastPopup = null;
         }
     }
 
-    // --- MAIN OBSERVER & TIMERS ---
-    const observer = new MutationObserver(() => handleManualMode());
+    function initializeScript() {
+        if (initialLoadComplete) return;
+
+        const hasLegend = document.querySelector('[data-qa-id="legend-source-item"], [class*="sourceItem-"]');
+        if (hasLegend) {
+            initialLoadComplete = true;
+            setTimeout(() => { autoUpdateRoutine(); }, 1000); 
+            setInterval(autoUpdateRoutine, UPDATE_INTERVAL_MS);
+        }
+    }
+
+    document.addEventListener('click', () => {
+        if (initialLoadComplete && !isUpdatingStealth) {
+            setTimeout(handleManualMode, 200); 
+        }
+    });
+
+    const observer = new MutationObserver((mutations) => {
+        if (!initialLoadComplete) initializeScript();
+    });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    setTimeout(() => {
-        autoUpdateRoutine();
-        setInterval(autoUpdateRoutine, UPDATE_INTERVAL_MS);
-    }, 5000);
-
-    setInterval(() => {
-        const adBox = document.querySelector('[id="charting-ad"]');
-        if (adBox) {
-            adBox.closest('[role="log"]')?.remove();
-        }
-    }, 100);
+    const initInterval = setInterval(() => {
+        if (initialLoadComplete) clearInterval(initInterval);
+        else initializeScript();
+    }, 1000);
 
 })();
