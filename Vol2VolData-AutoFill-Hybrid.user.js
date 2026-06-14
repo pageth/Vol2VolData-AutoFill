@@ -28,10 +28,31 @@
     let cachedIntraday = null;
     let cachedOI = null;
 
+    const cssHideAds = `
+        #charting-ad, 
+        [id^="toast-"], 
+        div[class*="toast-"],
+        div[class*="ad-container"], 
+        div[class*="tv-floating-toolbar"],
+        div[class*="floating-ad"],
+        div[class*="ads-banner"],
+        iframe[src*="googlesyndication"],
+        iframe[src*="doubleclick"] { 
+            display: none !important; 
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            height: 0 !important;
+            width: 0 !important;
+        }
+    `;
+
     if (typeof GM_addStyle !== "undefined") {
-        GM_addStyle(`
-            #charting-ad, [id^="toast-"], div[class*="toast-"] { display: none !important; }
-        `);
+        GM_addStyle(cssHideAds);
+    } else {
+        const styleEl = document.createElement('style');
+        styleEl.innerHTML = cssHideAds;
+        document.head.appendChild(styleEl);
     }
 
     function showStatusNotify(isSuccess) {
@@ -272,9 +293,12 @@
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    const initInterval = setInterval(() => {
-        if (initialLoadComplete) clearInterval(initInterval);
-        else initializeScript();
-    }, 1000);
+    setInterval(() => {
+        const ads = document.querySelectorAll('#charting-ad, iframe[src*="googlesyndication"], iframe[src*="doubleclick"], div[class*="ad-container"]');
+        ads.forEach(ad => {
+            const wrapper = ad.closest('[role="log"], .tv-floating-toolbar') || ad;
+            if (wrapper) wrapper.remove();
+        });
+    }, 500);
 
 })();
