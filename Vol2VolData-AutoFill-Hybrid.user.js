@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      2.5
+// @version      2.6
 // @description  Auto fill Intraday & OI Data
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
@@ -24,6 +24,7 @@
     let lastPopup = null;
     let isUpdatingStealth = false;
     let initialLoadComplete = false;
+    let isScanningManual = false;
     
     let cachedIntraday = null;
     let cachedOI = null;
@@ -101,7 +102,6 @@
         el.dispatchEvent(new MouseEvent('click', opts));
     }
 
-    // --- Strict Zero-Inference Context Optimization ---
     function simulateRealisticDoubleClick(el) {
         if (!el) return;
         const rect = el.getBoundingClientRect();
@@ -300,22 +300,28 @@
     }
 
     const triggerManualCheck = () => {
-        if (initialLoadComplete && !isUpdatingStealth) {
-            let attempts = 0;
-            const scanner = setInterval(() => {
-                const { taIntraday, taOI } = findTextareas();
-                if (taIntraday || taOI) {
-                    clearInterval(scanner);
-                    handleManualMode();
-                }
-                attempts++;
-                if (attempts >= 15) clearInterval(scanner); 
-            }, 200);
-        }
+        if (!initialLoadComplete || isUpdatingStealth || isScanningManual) return;
+        
+        isScanningManual = true;
+        let attempts = 0;
+        const scanner = setInterval(() => {
+            const { taIntraday, taOI } = findTextareas();
+            if (taIntraday || taOI) {
+                clearInterval(scanner);
+                isScanningManual = false;
+                handleManualMode();
+                return;
+            }
+            attempts++;
+            if (attempts >= 15) {
+                clearInterval(scanner); 
+                isScanningManual = false;
+            }
+        }, 200);
     };
 
-    document.addEventListener('click', triggerManualCheck);
-    document.addEventListener('touchend', triggerManualCheck);
+    document.addEventListener('click', triggerManualCheck, true);
+    document.addEventListener('touchend', triggerManualCheck, true);
 
     const observer = new MutationObserver((mutations) => {
         if (!initialLoadComplete) initializeScript();
