@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      2.0
+// @version      2.5
 // @description  Auto fill Intraday & OI Data
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
@@ -101,6 +101,7 @@
         el.dispatchEvent(new MouseEvent('click', opts));
     }
 
+    // --- Strict Zero-Inference Context Optimization ---
     function simulateRealisticDoubleClick(el) {
         if (!el) return;
         const rect = el.getBoundingClientRect();
@@ -163,7 +164,7 @@
         if (labelOI) taOI = textareas.find(t => labelOI.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING);
         return { taIntraday, taOI };
     }
-    
+
     async function handleManualMode() {
         const { taIntraday, taOI } = findTextareas();
         if (!taIntraday && !taOI) return;
@@ -298,16 +299,34 @@
         }
     }
 
-    document.addEventListener('click', () => {
+    const triggerManualCheck = () => {
         if (initialLoadComplete && !isUpdatingStealth) {
-            setTimeout(handleManualMode, 200); 
+            let attempts = 0;
+            const scanner = setInterval(() => {
+                const { taIntraday, taOI } = findTextareas();
+                if (taIntraday || taOI) {
+                    clearInterval(scanner);
+                    handleManualMode();
+                }
+                attempts++;
+                if (attempts >= 15) clearInterval(scanner); 
+            }, 200);
         }
-    });
+    };
+
+    document.addEventListener('click', triggerManualCheck);
+    document.addEventListener('touchend', triggerManualCheck);
 
     const observer = new MutationObserver((mutations) => {
         if (!initialLoadComplete) initializeScript();
     });
     observer.observe(document.body, { childList: true, subtree: true });
+
+    setInterval(() => {
+        if (lastPopup && !document.body.contains(lastPopup)) {
+            lastPopup = null;
+        }
+    }, 1000);
 
     setInterval(() => {
         const ads = document.querySelectorAll('#charting-ad, iframe[src*="googlesyndication"], iframe[src*="doubleclick"], div[class*="ad-container"]');
