@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      1.0
+// @version      2.0
 // @description  Auto fill Intraday & OI Data
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
@@ -163,7 +163,7 @@
         if (labelOI) taOI = textareas.find(t => labelOI.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING);
         return { taIntraday, taOI };
     }
-
+    
     async function handleManualMode() {
         const { taIntraday, taOI } = findTextareas();
         if (!taIntraday && !taOI) return;
@@ -171,29 +171,45 @@
         if (!popup || popup === lastPopup || isUpdatingStealth) return;
         lastPopup = popup;
 
-        if (taIntraday) setColor(taIntraday, "#6b6b00");
-        if (taOI) setColor(taOI, "#6b6b00");
+        if (cachedIntraday || cachedOI) {
+            if (taIntraday && cachedIntraday) { fillReact(taIntraday, cachedIntraday); setColor(taIntraday, "#006400"); }
+            if (taOI && cachedOI) { fillReact(taOI, cachedOI); setColor(taOI, "#006400"); }
+            showStatusNotify(true);
+            setTimeout(() => {
+                if (taIntraday) taIntraday.style.background = "";
+                if (taOI) taOI.style.background = "";
+            }, 2000);
+        } else {
+            if (taIntraday) setColor(taIntraday, "#6b6b00");
+            if (taOI) setColor(taOI, "#6b6b00");
+        }
 
         const data = await fetchAll();
-        let isSuccess = false;
+        
+        if (data.intraday !== cachedIntraday || data.oi !== cachedOI) {
+            let isSuccess = false;
 
-        if (taIntraday) {
-            if (data.intraday) { fillReact(taIntraday, data.intraday); setColor(taIntraday, "#006400"); isSuccess = true; }
-            else setColor(taIntraday, "#8B0000");
-            setTimeout(() => taIntraday.style.background = "", 2000);
-        }
-        if (taOI) {
-            if (data.oi) { fillReact(taOI, data.oi); setColor(taOI, "#006400"); isSuccess = true; }
-            else setColor(taOI, "#8B0000");
-            setTimeout(() => taOI.style.background = "", 2000);
-        }
+            if (taIntraday) {
+                if (data.intraday) { fillReact(taIntraday, data.intraday); setColor(taIntraday, "#006400"); isSuccess = true; }
+                else setColor(taIntraday, "#8B0000");
+            }
+            if (taOI) {
+                if (data.oi) { fillReact(taOI, data.oi); setColor(taOI, "#006400"); isSuccess = true; }
+                else setColor(taOI, "#8B0000");
+            }
 
-        if (isSuccess) {
-            cachedIntraday = data.intraday;
-            cachedOI = data.oi;
-            showStatusNotify(true);
-        } else {
-            showStatusNotify(false);
+            setTimeout(() => {
+                if (taIntraday) taIntraday.style.background = "";
+                if (taOI) taOI.style.background = "";
+            }, 2000);
+
+            if (isSuccess) {
+                cachedIntraday = data.intraday;
+                cachedOI = data.oi;
+                showStatusNotify(true);
+            } else {
+                showStatusNotify(false);
+            }
         }
     }
 
