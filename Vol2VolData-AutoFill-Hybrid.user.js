@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      2.7
-// @description  Auto fill Intraday & OI Data
+// @version      2.8
+// @description  Auto fill Intraday & OI Data with Auto-Detect Asset
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
 // @icon         https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/refs/heads/main/tradingview.ico
@@ -17,8 +17,7 @@
     "use strict";
 
     const TARGET_NAMES = ['Round Numbers', 'Gamma Options', 'Vol2Vol']; 
-    const URL_INTRADAY = "https://pageth.github.io/Vol2VolData/IntradayData.txt";
-    const URL_OI       = "https://pageth.github.io/Vol2VolData/OIData.txt";
+    const BASE_URL = "https://pageth.github.io/Vol2VolData/";
     const UPDATE_INTERVAL_MS = 100000;
 
     let lastPopup = null;
@@ -56,7 +55,7 @@
         document.head.appendChild(styleEl);
     }
 
-    function showStatusNotify(isSuccess) {
+    function showStatusNotify(isSuccess, assetPrefix = "") {
         const existing = document.getElementById('tv-auto-notify');
         if (existing) existing.remove();
 
@@ -75,8 +74,12 @@
             border-radius: 4px;
             color: white;
             background: ${isSuccess ? 'rgba(0,100,0,0.8)' : 'rgba(139,0,0,0.8)'};
+            font-family: sans-serif;
         `;
-        notify.innerHTML = isSuccess ? '✅' : '❌';
+        
+        // แสดงชื่อ Asset ที่กำลังโหลดข้อมูล
+        let assetName = assetPrefix === "US100-" ? "NASDAQ" : (assetPrefix === "Oil-" ? "OIL" : "GOLD");
+        notify.innerHTML = `${isSuccess ? '✅' : '❌'} ${assetName}`;
         document.body.appendChild(notify);
 
         setTimeout(() => {
@@ -130,6 +133,26 @@
         return null;
     }
 
+    // ฟังก์ชันช่วยจับ Ticker/Symbol เพื่อระบุว่าดูกราฟอะไรอยู่
+    function getAssetPrefix() {
+        const titleText = document.title.toUpperCase();
+        const legendTitleEl = document.querySelector('[data-qa-id="title-wrapper legend-source-title"]');
+        const legendText = legendTitleEl ? legendTitleEl.textContent.toUpperCase() : "";
+        const combinedText = `${titleText} ${legendText}`;
+
+        // ตรวจจับกลุ่ม NASDAQ / NQ
+        if (combinedText.includes("US100") || combinedText.includes("USTEC") || combinedText.includes("NASDAQ") || combinedText.includes("NDQ") || titleText.startsWith("NQ")) {
+            return "US100-";
+        }
+        // ตรวจจับกลุ่ม Oil / WTI / CL
+        if (combinedText.includes("WTI") || combinedText.includes("OIL") || combinedText.includes("USOIL") || combinedText.includes("CRUDE OIL") || titleText.startsWith("CL")) {
+            return "Oil-";
+        }
+
+        // ค่าเริ่มต้น (Gold)
+        return "";
+    }
+
     function fetchURL(url) {
         return new Promise(resolve => {
             GM_xmlhttpRequest({
@@ -148,8 +171,12 @@
     }
 
     async function fetchAll() {
-        const [intraday, oi] = await Promise.all([fetchURL(URL_INTRADAY), fetchURL(URL_OI)]);
-        return { intraday, oi };
+        const prefix = getAssetPrefix();
+        const urlIntraday = `${BASE_URL}${prefix}IntradayData.txt`;
+        const urlOI = `${BASE_URL}${prefix}OIData.txt`;
+
+        const [intraday, oi] = await Promise.all([fetchURL(urlIntraday), fetchURL(urlOI)]);
+        return { intraday, oi, prefix };
     }
 
     function fillReact(el, data) {
@@ -178,10 +205,13 @@
         if (!popup || popup === lastPopup || isUpdatingStealth) return;
         lastPopup = popup;
 
+        // เช็คก่อนว่าสลับเหรียญหรือเปล่า
+        const currentPrefix = getAssetPrefix();
+
         if (cachedIntraday || cachedOI) {
             if (taIntraday && cachedIntraday) { fillReact(taIntraday, cachedIntraday); setColor(taIntraday, "#006400"); }
             if (taOI && cachedOI) { fillReact(taOI, cachedOI); setColor(taOI, "#006400"); }
-            showStatusNotify(true);
+            showStatusNotify(true, currentPrefix);
             setTimeout(() => {
                 if (taIntraday) taIntraday.style.background = "";
                 if (taOI) taOI.style.background = "";
@@ -213,9 +243,9 @@
             if (isSuccess) {
                 cachedIntraday = data.intraday;
                 cachedOI = data.oi;
-                showStatusNotify(true);
+                showStatusNotify(true, data.prefix);
             } else {
-                showStatusNotify(false);
+                showStatusNotify(false, data.prefix);
             }
         }
     }
@@ -226,13 +256,13 @@
 
         const data = await fetchAll();
         if (!data.intraday && !data.oi) {
-            showStatusNotify(false);
+            showStatusNotify(false, data.prefix);
             isUpdatingStealth = false;
             return;
         }
 
         if (data.intraday === cachedIntraday && data.oi === cachedOI) {
-            showStatusNotify(true);
+            showStatusNotify(true, data.prefix);
             isUpdatingStealth = false;
             return;
         }
@@ -278,14 +308,14 @@
                 cachedIntraday = data.intraday;
                 cachedOI = data.oi;
                 
-                showStatusNotify(true);
+                showStatusNotify(true, data.prefix);
             } else {
                 document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-                showStatusNotify(true);
+                showStatusNotify(true, data.prefix);
             }
 
         } catch (e) {
-            showStatusNotify(false);
+            showStatusNotify(false, data.prefix);
         } finally {
             const s = document.getElementById(styleId);
             if (s) s.remove();
