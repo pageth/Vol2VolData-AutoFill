@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      2.6
+// @version      2.7
 // @description  Auto fill Intraday & OI Data
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
 // @icon         https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/refs/heads/main/tradingview.ico
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
-// @connect      raw.githubusercontent.com
+// @connect      pageth.github.io
 // @downloadURL  https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/main/Vol2VolData-AutoFill-Hybrid.user.js
 // @updateURL    https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/main/Vol2VolData-AutoFill-Hybrid.user.js
 // ==/UserScript==
@@ -17,8 +17,8 @@
     "use strict";
 
     const TARGET_NAMES = ['Round Numbers', 'Gamma Options', 'Vol2Vol']; 
-    const URL_INTRADAY = "https://raw.githubusercontent.com/pageth/Vol2VolData/main/IntradayData.txt";
-    const URL_OI       = "https://raw.githubusercontent.com/pageth/Vol2VolData/main/OIData.txt";
+    const URL_INTRADAY = "https://pageth.github.io/Vol2VolData/IntradayData.txt";
+    const URL_OI       = "https://pageth.github.io/Vol2VolData/OIData.txt";
     const UPDATE_INTERVAL_MS = 100000;
 
     let lastPopup = null;
@@ -135,6 +135,12 @@
             GM_xmlhttpRequest({
                 method: "GET",
                 url: url + "?t=" + Date.now(),
+                nocache: true,
+                headers: {
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
+                },
                 onload: r => resolve(r.status === 200 ? r.responseText : null),
                 onerror: () => resolve(null)
             });
