@@ -65,25 +65,25 @@
             position: fixed;
             bottom: 20px;
             right: 20px;
-            padding: 4px 8px;
-            font-size: 16px; 
+            padding: 3px 8px;
+            font-size: 12px; 
             z-index: 2147483647; 
             pointer-events: none;
             transition: opacity 0.5s ease;
-            text-shadow: 0px 1px 3px rgba(0,0,0,0.5); 
+            text-shadow: 0px 1px 2px rgba(0,0,0,0.5); 
             border-radius: 4px;
             color: white;
             background: ${isSuccess ? 'rgba(0,100,0,0.8)' : 'rgba(139,0,0,0.8)'};
             font-family: sans-serif;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
         `;
         
         let assetName = assetPrefix === "US100-" ? "NASDAQ" : (assetPrefix === "Oil-" ? "OIL" : "GOLD");
         
         notify.innerHTML = `
-            <span style="font-size: 11px;">${isSuccess ? '✅' : '❌'}</span>
+            <span style="font-size: 10px;">${isSuccess ? '✅' : '❌'}</span>
             <span>${assetName}</span>
         `;
         document.body.appendChild(notify);
