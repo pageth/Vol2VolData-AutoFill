@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      2.8
+// @version      2.9
 // @description  Auto fill Intraday & OI Data with Auto-Detect Asset
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
@@ -24,9 +24,9 @@
     let isUpdatingStealth = false;
     let initialLoadComplete = false;
     let isScanningManual = false;
-    
     let cachedIntraday = null;
     let cachedOI = null;
+    let currentSymbolPrefix = null;
 
     const cssHideAds = `
         #charting-ad, 
@@ -75,11 +75,17 @@
             color: white;
             background: ${isSuccess ? 'rgba(0,100,0,0.8)' : 'rgba(139,0,0,0.8)'};
             font-family: sans-serif;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         `;
         
-        // แสดงชื่อ Asset ที่กำลังโหลดข้อมูล
         let assetName = assetPrefix === "US100-" ? "NASDAQ" : (assetPrefix === "Oil-" ? "OIL" : "GOLD");
-        notify.innerHTML = `${isSuccess ? '✅' : '❌'} ${assetName}`;
+        
+        notify.innerHTML = `
+            <span style="font-size: 11px;">${isSuccess ? '✅' : '❌'}</span>
+            <span>${assetName}</span>
+        `;
         document.body.appendChild(notify);
 
         setTimeout(() => {
@@ -133,23 +139,18 @@
         return null;
     }
 
-    // ฟังก์ชันช่วยจับ Ticker/Symbol เพื่อระบุว่าดูกราฟอะไรอยู่
     function getAssetPrefix() {
         const titleText = document.title.toUpperCase();
         const legendTitleEl = document.querySelector('[data-qa-id="title-wrapper legend-source-title"]');
         const legendText = legendTitleEl ? legendTitleEl.textContent.toUpperCase() : "";
         const combinedText = `${titleText} ${legendText}`;
 
-        // ตรวจจับกลุ่ม NASDAQ / NQ
         if (combinedText.includes("US100") || combinedText.includes("USTEC") || combinedText.includes("NASDAQ") || combinedText.includes("NDQ") || titleText.startsWith("NQ")) {
             return "US100-";
         }
-        // ตรวจจับกลุ่ม Oil / WTI / CL
         if (combinedText.includes("WTI") || combinedText.includes("OIL") || combinedText.includes("USOIL") || combinedText.includes("CRUDE OIL") || titleText.startsWith("CL")) {
             return "Oil-";
         }
-
-        // ค่าเริ่มต้น (Gold)
         return "";
     }
 
@@ -205,7 +206,6 @@
         if (!popup || popup === lastPopup || isUpdatingStealth) return;
         lastPopup = popup;
 
-        // เช็คก่อนว่าสลับเหรียญหรือเปล่า
         const currentPrefix = getAssetPrefix();
 
         if (cachedIntraday || cachedOI) {
@@ -330,6 +330,7 @@
         const hasLegend = document.querySelector('[data-qa-id="legend-source-item"], [class*="sourceItem-"]');
         if (hasLegend) {
             initialLoadComplete = true;
+            currentSymbolPrefix = getAssetPrefix(); 
             setTimeout(() => { autoUpdateRoutine(); }, 1000); 
             setInterval(autoUpdateRoutine, UPDATE_INTERVAL_MS);
         }
@@ -363,6 +364,21 @@
         if (!initialLoadComplete) initializeScript();
     });
     observer.observe(document.body, { childList: true, subtree: true });
+
+    setInterval(() => {
+        if (!initialLoadComplete) return;
+        
+        const currentPrefix = getAssetPrefix();
+        
+        if (currentSymbolPrefix !== null && currentPrefix !== currentSymbolPrefix) {
+            currentSymbolPrefix = currentPrefix;
+            
+            cachedIntraday = null;
+            cachedOI = null;
+            
+            autoUpdateRoutine();
+        }
+    }, 1000);
 
     setInterval(() => {
         if (lastPopup && !document.body.contains(lastPopup)) {
