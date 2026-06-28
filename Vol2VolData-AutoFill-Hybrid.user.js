@@ -80,7 +80,7 @@
             gap: 4px;
         `;
         
-        let assetName = assetPrefix === "US100-" ? "NASDAQ" : (assetPrefix === "Oil-" ? "OIL" : "GOLD");
+        let assetName = assetPrefix === "ES-" ? "S&P 500" : (assetPrefix === "Oil-" ? "OIL" : "GOLD");
         
         notify.innerHTML = `
             <span style="font-size: 10px;">${isSuccess ? '✅' : '❌'}</span>
@@ -145,8 +145,8 @@
         const legendText = legendTitleEl ? legendTitleEl.textContent.toUpperCase() : "";
         const combinedText = `${titleText} ${legendText}`;
 
-        if (combinedText.includes("US100") || combinedText.includes("USTEC") || combinedText.includes("NASDAQ") || combinedText.includes("NDQ") || titleText.startsWith("NQ")) {
-            return "US100-";
+        if (combinedText.includes("ES") || combinedText.includes("SPX") || combinedText.includes("US500") || combinedText.includes("S&P 500") || combinedText.includes("SP500") || titleText.startsWith("ES")) {
+            return "ES-";
         }
         if (combinedText.includes("WTI") || combinedText.includes("OIL") || combinedText.includes("USOIL") || combinedText.includes("CRUDE OIL") || titleText.startsWith("CL")) {
             return "Oil-";
