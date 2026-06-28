@@ -145,11 +145,14 @@
         const legendText = legendTitleEl ? legendTitleEl.textContent.toUpperCase() : "";
         const combinedText = `${titleText} ${legendText}`;
 
-        if (combinedText.includes("ES") || combinedText.includes("SPX") || combinedText.includes("US500") || combinedText.includes("S&P 500") || combinedText.includes("SP500") || titleText.startsWith("ES")) {
+        if (titleText.startsWith("ES") || titleText.startsWith("MES") || combinedText.includes("SPX") || combinedText.includes("US500") || combinedText.includes("S&P 500") || combinedText.includes("SP500")) {
             return "ES-";
         }
-        if (combinedText.includes("WTI") || combinedText.includes("OIL") || combinedText.includes("USOIL") || combinedText.includes("CRUDE OIL") || titleText.startsWith("CL")) {
+        if (titleText.startsWith("CL") || titleText.startsWith("WTI") || titleText.startsWith("USOIL") || combinedText.includes("WTI") || combinedText.includes("OIL") || combinedText.includes("USOIL") || combinedText.includes("CRUDE OIL")) {
             return "Oil-";
+        }
+        if (titleText.startsWith("GC") || titleText.startsWith("MGC") || combinedText.includes("GOLD") || combinedText.includes("XAU")) {
+            return ""; 
         }
         return "";
     }
