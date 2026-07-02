@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      2.9
+// @version      2.9.1
 // @description  Auto fill Intraday & OI Data with Auto-Detect Asset
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
@@ -26,7 +26,7 @@
     let isScanningManual = false;
     let cachedIntraday = null;
     let cachedOI = null;
-    let currentSymbolPrefix = null;
+    let currentRawTitle = null; 
 
     const cssHideAds = `
         #charting-ad, 
@@ -163,13 +163,15 @@
                 method: "GET",
                 url: url + "?t=" + Date.now(),
                 nocache: true,
+                timeout: 10000, 
                 headers: {
                     "Cache-Control": "no-cache, no-store, must-revalidate",
                     "Pragma": "no-cache",
                     "Expires": "0"
                 },
                 onload: r => resolve(r.status === 200 ? r.responseText : null),
-                onerror: () => resolve(null)
+                onerror: () => resolve(null),
+                ontimeout: () => resolve(null)
             });
         });
     }
@@ -185,10 +187,14 @@
 
     function fillReact(el, data) {
         if (!el || !data) return;
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
-        setter.call(el, data);
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-        el.dispatchEvent(new Event("change", { bubbles: true }));
+        try {
+            const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+            setter.call(el, data);
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+        } catch (e) {
+            console.error("Fill Error:", e);
+        }
     }
 
     function findTextareas() {
@@ -253,9 +259,13 @@
         }
     }
 
+    let stealthSafetyTimer = null;
     async function autoUpdateRoutine() {
         if (isUpdatingStealth) return;
         isUpdatingStealth = true;
+
+        clearTimeout(stealthSafetyTimer);
+        stealthSafetyTimer = setTimeout(() => { isUpdatingStealth = false; }, 15000);
 
         const data = await fetchAll();
         if (!data.intraday && !data.oi) {
@@ -307,10 +317,8 @@
             const okBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim().match(/^(OK|ตกลง)$/i));
             if (okBtn) {
                 simulateClick(okBtn);
-                
                 cachedIntraday = data.intraday;
                 cachedOI = data.oi;
-                
                 showStatusNotify(true, data.prefix);
             } else {
                 document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -319,9 +327,11 @@
 
         } catch (e) {
             showStatusNotify(false, data.prefix);
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         } finally {
             const s = document.getElementById(styleId);
             if (s) s.remove();
+            clearTimeout(stealthSafetyTimer);
             isUpdatingStealth = false;
             lastPopup = null;
         }
@@ -333,8 +343,8 @@
         const hasLegend = document.querySelector('[data-qa-id="legend-source-item"], [class*="sourceItem-"]');
         if (hasLegend) {
             initialLoadComplete = true;
-            currentSymbolPrefix = getAssetPrefix(); 
-            setTimeout(() => { autoUpdateRoutine(); }, 1000); 
+            currentRawTitle = document.title;
+            setTimeout(() => { autoUpdateRoutine(); }, 1500); 
             setInterval(autoUpdateRoutine, UPDATE_INTERVAL_MS);
         }
     }
@@ -363,7 +373,7 @@
     document.addEventListener('click', triggerManualCheck, true);
     document.addEventListener('touchend', triggerManualCheck, true);
 
-    const observer = new MutationObserver((mutations) => {
+    const observer = new MutationObserver(() => {
         if (!initialLoadComplete) initializeScript();
     });
     observer.observe(document.body, { childList: true, subtree: true });
@@ -371,21 +381,24 @@
     setInterval(() => {
         if (!initialLoadComplete) return;
         
-        const currentPrefix = getAssetPrefix();
-        
-        if (currentSymbolPrefix !== null && currentPrefix !== currentSymbolPrefix) {
-            currentSymbolPrefix = currentPrefix;
+        const rawTitle = document.title;
+        if (currentRawTitle !== null && rawTitle !== currentRawTitle) {
+            currentRawTitle = rawTitle;
             
             cachedIntraday = null;
             cachedOI = null;
             
-            autoUpdateRoutine();
+            setTimeout(() => {
+                autoUpdateRoutine();
+            }, 3500);
         }
     }, 1000);
 
     setInterval(() => {
-        if (lastPopup && !document.body.contains(lastPopup)) {
-            lastPopup = null;
+        if (lastPopup) {
+            if (!document.body.contains(lastPopup) || lastPopup.offsetHeight === 0) {
+                lastPopup = null;
+            }
         }
     }, 1000);
 
