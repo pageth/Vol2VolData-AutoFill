@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      2.9.1
+// @version      2.9.2
 // @description  Auto fill Intraday & OI Data with Auto-Detect Asset
 // @author       filmworachai
 // @match        https://*.tradingview.com/chart/*
@@ -26,7 +26,7 @@
     let isScanningManual = false;
     let cachedIntraday = null;
     let cachedOI = null;
-    let currentRawTitle = null; 
+    let currentSymbolPrefix = null; 
 
     const cssHideAds = `
         #charting-ad, 
@@ -327,7 +327,6 @@
 
         } catch (e) {
             showStatusNotify(false, data.prefix);
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         } finally {
             const s = document.getElementById(styleId);
             if (s) s.remove();
@@ -343,7 +342,7 @@
         const hasLegend = document.querySelector('[data-qa-id="legend-source-item"], [class*="sourceItem-"]');
         if (hasLegend) {
             initialLoadComplete = true;
-            currentRawTitle = document.title;
+            currentSymbolPrefix = getAssetPrefix();
             setTimeout(() => { autoUpdateRoutine(); }, 1500); 
             setInterval(autoUpdateRoutine, UPDATE_INTERVAL_MS);
         }
@@ -381,9 +380,10 @@
     setInterval(() => {
         if (!initialLoadComplete) return;
         
-        const rawTitle = document.title;
-        if (currentRawTitle !== null && rawTitle !== currentRawTitle) {
-            currentRawTitle = rawTitle;
+        const currentPrefix = getAssetPrefix();
+        
+        if (currentSymbolPrefix !== null && currentPrefix !== currentSymbolPrefix) {
+            currentSymbolPrefix = currentPrefix;
             
             cachedIntraday = null;
             cachedOI = null;
