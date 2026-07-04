@@ -33,7 +33,6 @@
         [id^="toast-"], 
         div[class*="toast-"],
         div[class*="ad-container"], 
-        div[class*="tv-floating-toolbar"],
         div[class*="floating-ad"],
         div[class*="ads-banner"],
         iframe[src*="googlesyndication"],
@@ -405,7 +404,7 @@
     setInterval(() => {
         const ads = document.querySelectorAll('#charting-ad, iframe[src*="googlesyndication"], iframe[src*="doubleclick"], div[class*="ad-container"]');
         ads.forEach(ad => {
-            const wrapper = ad.closest('[role="log"], .tv-floating-toolbar') || ad;
+            const wrapper = ad.closest('[role="log"]') || ad;
             if (wrapper) wrapper.remove();
         });
     }, 500);
