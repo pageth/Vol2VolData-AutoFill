@@ -1,6 +1,6 @@
 # Vol2VolData AutoFill
 
-Auto fill Intraday & OI data for indicator on TradingView.
+Auto fill Intraday & OI data (https://github.com/pageth/Vol2VolData) for indicator (https://www.tradingview.com/script/jfezw4Lz-Round-Numbers-Intraday-OI-Profile/) on TradingView.
 
 ---
 
