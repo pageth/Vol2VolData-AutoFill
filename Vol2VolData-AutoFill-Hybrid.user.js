@@ -1,13 +1,16 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      2.9.2
+// @version      3.0.0
 // @description  Auto fill Intraday & OI Data with Auto-Detect Asset
 // @match        https://*.tradingview.com/chart/*
 // @icon         https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/refs/heads/main/tradingview.ico
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
-// @connect      pageth.github.io
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @connect      *
 // @downloadURL  https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/main/Vol2VolData-AutoFill-Hybrid.user.js
 // @updateURL    https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/main/Vol2VolData-AutoFill-Hybrid.user.js
 // ==/UserScript==
@@ -15,8 +18,9 @@
 (function () {
     "use strict";
 
-    const TARGET_NAMES = ['Round Numbers', 'Gamma Options', 'Vol2Vol']; 
-    const BASE_URL = "https://pageth.github.io/Vol2VolData/";
+    const TARGET_NAMES = ['Round Numbers', 'Gamma Options', 'Vol2Vol'];
+
+    const FB_BASE_URL = "https://vol2vol-db-default-rtdb.asia-southeast1.firebasedatabase.app/";
     const UPDATE_INTERVAL_MS = 100000;
 
     let lastPopup = null;
@@ -25,23 +29,27 @@
     let isScanningManual = false;
     let cachedIntraday = null;
     let cachedOI = null;
-    let currentSymbolPrefix = null; 
+    let currentSymbolPrefix = null;
 
     const cssHideAds = `
-        #charting-ad, 
-        [id^="toast-"], 
+        #charting-ad,
+        [id^="toast-"],
         div[class*="toast-"],
-        div[class*="ad-container"], 
+        div[class*="ad-container"],
         div[class*="floating-ad"],
         div[class*="ads-banner"],
         iframe[src*="googlesyndication"],
-        iframe[src*="doubleclick"] { 
-            display: none !important; 
+        iframe[src*="doubleclick"] {
+            display: none !important;
             visibility: hidden !important;
             opacity: 0 !important;
             pointer-events: none !important;
             height: 0 !important;
             width: 0 !important;
+        }
+
+        .layout__area--right {
+            width: auto !important;
         }
     `;
 
@@ -51,6 +59,28 @@
         const styleEl = document.createElement('style');
         styleEl.innerHTML = cssHideAds;
         document.head.appendChild(styleEl);
+    }
+
+    function getApiKey() {
+        let key = GM_getValue("API_KEY_FOLDER", "");
+        if (!key) {
+            key = prompt("🔑 กรุณาระบุ API Key สำหรับดึงข้อมูล Vol2Vol:");
+            if (key) {
+                GM_setValue("API_KEY_FOLDER", key.trim());
+            }
+        }
+        return key ? key.trim() : "";
+    }
+
+    if (typeof GM_registerMenuCommand !== "undefined") {
+        GM_registerMenuCommand("⚙️ ตั้งค่า / เปลี่ยน API Key", () => {
+            const currentKey = GM_getValue("API_KEY_FOLDER", "");
+            const newKey = prompt("ระบุ API Key ใหม่:", currentKey);
+            if (newKey !== null) {
+                GM_setValue("API_KEY_FOLDER", newKey.trim());
+                alert("บันทึก API Key เรียบร้อยแล้ว!");
+            }
+        });
     }
 
     function showStatusNotify(isSuccess, assetPrefix = "") {
@@ -64,11 +94,11 @@
             bottom: 20px;
             right: 20px;
             padding: 3px 8px;
-            font-size: 12px; 
-            z-index: 2147483647; 
+            font-size: 12px;
+            z-index: 2147483647;
             pointer-events: none;
             transition: opacity 0.5s ease;
-            text-shadow: 0px 1px 2px rgba(0,0,0,0.5); 
+            text-shadow: 0px 1px 2px rgba(0,0,0,0.5);
             border-radius: 4px;
             color: white;
             background: ${isSuccess ? 'rgba(0,100,0,0.8)' : 'rgba(139,0,0,0.8)'};
@@ -77,9 +107,9 @@
             align-items: center;
             gap: 4px;
         `;
-        
+
         let assetName = assetPrefix === "ES-" ? "S&P 500" : (assetPrefix === "Oil-" ? "OIL" : "GOLD");
-        
+
         notify.innerHTML = `
             <span style="font-size: 10px;">${isSuccess ? '✅' : '❌'}</span>
             <span>${assetName}</span>
@@ -115,7 +145,7 @@
         const cx = rect.left + (rect.width / 2) || 0;
         const cy = rect.top + (rect.height / 2) || 0;
         const opts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy };
-        
+
         el.dispatchEvent(new MouseEvent('mouseenter', opts));
         el.dispatchEvent(new MouseEvent('mouseover', opts));
         el.dispatchEvent(new MouseEvent('mousedown', opts));
@@ -150,24 +180,47 @@
             return "Oil-";
         }
         if (titleText.startsWith("GC") || titleText.startsWith("MGC") || combinedText.includes("GOLD") || combinedText.includes("XAU")) {
-            return ""; 
+            return "";
         }
         return "";
     }
 
-    function fetchURL(url) {
+    function fetchURL(fileName) {
         return new Promise(resolve => {
+            const apiKey = getApiKey();
+            if (!apiKey) {
+                console.error("❌ API Key is missing!");
+                return resolve(null);
+            }
+
+            const safeKey = fileName.replace(/\./g, '_');
+            const targetUrl = `${FB_BASE_URL}${apiKey}/${safeKey}.json?_=${Date.now()}`;
+
+            console.log(`🔍 [DEBUG] กำลังดึงข้อมูลจาก: ${FB_BASE_URL}${apiKey}/${safeKey}.json`);
+
             GM_xmlhttpRequest({
                 method: "GET",
-                url: url + "?t=" + Date.now(),
+                url: targetUrl,
                 nocache: true,
-                timeout: 10000, 
-                headers: {
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
-                    "Expires": "0"
+                timeout: 10000,
+                onload: r => {
+                    if (r.status === 200) {
+                        try {
+                            const decodedContent = JSON.parse(r.responseText);
+                            if (decodedContent === null) {
+                                console.error(`❌ ไม่พบข้อมูลใน Firebase! (Path นี้อาจจะไม่มีอยู่จริง: ${apiKey}/${safeKey}.json)`);
+                                resolve(null);
+                                return;
+                            }
+                            resolve(decodedContent);
+                        } catch (e) {
+                            resolve(r.responseText);
+                        }
+                    } else {
+                        console.error("Firebase Error:", r.status, r.responseText);
+                        resolve(null);
+                    }
                 },
-                onload: r => resolve(r.status === 200 ? r.responseText : null),
                 onerror: () => resolve(null),
                 ontimeout: () => resolve(null)
             });
@@ -176,10 +229,10 @@
 
     async function fetchAll() {
         const prefix = getAssetPrefix();
-        const urlIntraday = `${BASE_URL}${prefix}IntradayData.txt`;
-        const urlOI = `${BASE_URL}${prefix}OIData.txt`;
+        const fileIntraday = `${prefix}IntradayData.txt`;
+        const fileOI = `${prefix}OIData.txt`;
 
-        const [intraday, oi] = await Promise.all([fetchURL(urlIntraday), fetchURL(urlOI)]);
+        const [intraday, oi] = await Promise.all([fetchURL(fileIntraday), fetchURL(fileOI)]);
         return { intraday, oi, prefix };
     }
 
@@ -229,7 +282,7 @@
         }
 
         const data = await fetchAll();
-        
+
         if (data.intraday !== cachedIntraday || data.oi !== cachedOI) {
             let isSuccess = false;
 
@@ -297,7 +350,7 @@
             simulateRealisticDoubleClick(targetEl);
 
             let textareasFound = false;
-            for (let i = 0; i < 40; i++) { 
+            for (let i = 0; i < 40; i++) {
                 const { taIntraday, taOI } = findTextareas();
                 if (taIntraday || taOI) {
                     if (taIntraday && data.intraday) fillReact(taIntraday, data.intraday);
@@ -305,7 +358,7 @@
                     textareasFound = true;
                     break;
                 }
-                await new Promise(r => setTimeout(r, 50)); 
+                await new Promise(r => setTimeout(r, 50));
             }
 
             if (!textareasFound) throw new Error("Popup inputs not loaded in time");
@@ -341,14 +394,14 @@
         if (hasLegend) {
             initialLoadComplete = true;
             currentSymbolPrefix = getAssetPrefix();
-            setTimeout(() => { autoUpdateRoutine(); }, 1500); 
+            setTimeout(() => { autoUpdateRoutine(); }, 1500);
             setInterval(autoUpdateRoutine, UPDATE_INTERVAL_MS);
         }
     }
 
     const triggerManualCheck = () => {
         if (!initialLoadComplete || isUpdatingStealth || isScanningManual) return;
-        
+
         isScanningManual = true;
         let attempts = 0;
         const scanner = setInterval(() => {
@@ -361,7 +414,7 @@
             }
             attempts++;
             if (attempts >= 15) {
-                clearInterval(scanner); 
+                clearInterval(scanner);
                 isScanningManual = false;
             }
         }, 200);
@@ -377,15 +430,15 @@
 
     setInterval(() => {
         if (!initialLoadComplete) return;
-        
+
         const currentPrefix = getAssetPrefix();
-        
+
         if (currentSymbolPrefix !== null && currentPrefix !== currentSymbolPrefix) {
             currentSymbolPrefix = currentPrefix;
-            
+
             cachedIntraday = null;
             cachedOI = null;
-            
+
             setTimeout(() => {
                 autoUpdateRoutine();
             }, 3500);
