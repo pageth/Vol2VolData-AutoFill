@@ -1,18 +1,11 @@
 // ==UserScript==
 // @name         Vol2VolData AutoFill (Hybrid)
 // @namespace    https://github.com/pageth
-// @version      3.0.0
+// @version      3.1.0
 // @description  Auto fill Intraday & OI Data with Auto-Detect Asset
 // @match        https://*.tradingview.com/chart/*
 // @icon         https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/refs/heads/main/tradingview.ico
-// @grant        GM_xmlhttpRequest
-// @grant        GM_addStyle
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_registerMenuCommand
-// @connect      *
-// @downloadURL  https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/main/Vol2VolData-AutoFill-Hybrid.user.js
-// @updateURL    https://raw.githubusercontent.com/pageth/Vol2VolData-AutoFill/main/Vol2VolData-AutoFill-Hybrid.user.js
+// @grant        none
 // ==/UserScript==
 
 (function () {
@@ -53,36 +46,52 @@
         }
     `;
 
-    if (typeof GM_addStyle !== "undefined") {
-        GM_addStyle(cssHideAds);
-    } else {
-        const styleEl = document.createElement('style');
-        styleEl.innerHTML = cssHideAds;
+    // ใช้ Standard DOM แทน GM_addStyle เพื่อให้ iPad รองรับ 100%
+    const styleEl = document.createElement('style');
+    styleEl.innerHTML = cssHideAds;
+    if (document.head) {
         document.head.appendChild(styleEl);
+    } else {
+        document.addEventListener('DOMContentLoaded', () => document.head.appendChild(styleEl));
     }
 
+    // ================= [ ระบบจัดการ API Key (ปรับเพื่อ iPad) ] =================
     function getApiKey() {
-        let key = GM_getValue("API_KEY_FOLDER", "");
+        let key = localStorage.getItem("API_KEY_FOLDER"); // ใช้ localStorage แทน GM_getValue
         if (!key) {
             key = prompt("🔑 กรุณาระบุ API Key สำหรับดึงข้อมูล Vol2Vol:");
             if (key) {
-                GM_setValue("API_KEY_FOLDER", key.trim());
+                localStorage.setItem("API_KEY_FOLDER", key.trim());
             }
         }
         return key ? key.trim() : "";
     }
 
-    if (typeof GM_registerMenuCommand !== "undefined") {
-        GM_registerMenuCommand("⚙️ ตั้งค่า / เปลี่ยน API Key", () => {
-            const currentKey = GM_getValue("API_KEY_FOLDER", "");
+    // สร้างปุ่มรีเซ็ตรหัสผ่านเล็กๆ ซ่อนไว้มุมขวาล่าง (เพราะ iPad ไม่มีเมนู Tampermonkey)
+    function createResetKeyButton() {
+        if (document.getElementById('tv-reset-key-btn')) return;
+        const btn = document.createElement('div');
+        btn.id = 'tv-reset-key-btn';
+        btn.innerHTML = '⚙️';
+        btn.style.cssText = `
+            position: fixed; bottom: 20px; right: 20px; font-size: 14px; 
+            z-index: 2147483647; cursor: pointer; background: rgba(0,0,0,0.5); 
+            border-radius: 50%; width: 25px; height: 25px; display: flex; 
+            align-items: center; justify-content: center; opacity: 0.3;
+        `;
+        btn.onclick = () => {
+            const currentKey = localStorage.getItem("API_KEY_FOLDER") || "";
             const newKey = prompt("ระบุ API Key ใหม่:", currentKey);
             if (newKey !== null) {
-                GM_setValue("API_KEY_FOLDER", newKey.trim());
-                alert("บันทึก API Key เรียบร้อยแล้ว!");
+                localStorage.setItem("API_KEY_FOLDER", newKey.trim());
+                alert("บันทึก API Key เรียบร้อยแล้ว! หน้าเว็บจะรีโหลด...");
+                location.reload();
             }
-        });
+        };
+        document.body.appendChild(btn);
     }
 
+    // ================= [ UI Notifications & Helpers ] =================
     function showStatusNotify(isSuccess, assetPrefix = "") {
         const existing = document.getElementById('tv-auto-notify');
         if (existing) existing.remove();
@@ -91,7 +100,7 @@
         notify.id = 'tv-auto-notify';
         notify.style.cssText = `
             position: fixed;
-            bottom: 20px;
+            bottom: 50px;
             right: 20px;
             padding: 3px 8px;
             font-size: 12px;
@@ -146,15 +155,16 @@
         const cy = rect.top + (rect.height / 2) || 0;
         const opts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy };
 
-        el.dispatchEvent(new MouseEvent('mouseenter', opts));
-        el.dispatchEvent(new MouseEvent('mouseover', opts));
-        el.dispatchEvent(new MouseEvent('mousedown', opts));
-        el.dispatchEvent(new MouseEvent('mouseup', opts));
+        // รองรับ Touch Event บน iPad ด้วย
+        el.dispatchEvent(new TouchEvent('touchstart', opts));
+        el.dispatchEvent(new TouchEvent('touchend', opts));
         el.dispatchEvent(new MouseEvent('click', opts));
-        el.dispatchEvent(new MouseEvent('mousedown', opts));
-        el.dispatchEvent(new MouseEvent('mouseup', opts));
-        el.dispatchEvent(new MouseEvent('click', opts));
-        el.dispatchEvent(new MouseEvent('dblclick', opts));
+        setTimeout(() => {
+            el.dispatchEvent(new TouchEvent('touchstart', opts));
+            el.dispatchEvent(new TouchEvent('touchend', opts));
+            el.dispatchEvent(new MouseEvent('click', opts));
+            el.dispatchEvent(new MouseEvent('dblclick', opts));
+        }, 50);
     }
 
     function findTargetElement() {
@@ -185,46 +195,41 @@
         return "";
     }
 
-    function fetchURL(fileName) {
-        return new Promise(resolve => {
-            const apiKey = getApiKey();
-            if (!apiKey) {
-                console.error("❌ API Key is missing!");
-                return resolve(null);
-            }
+    // ================= [ Firebase API Fetcher (ปรับใช้ Standard Fetch สำหรับ iPad) ] =================
+    async function fetchURL(fileName) {
+        const apiKey = getApiKey();
+        if (!apiKey) {
+            console.error("❌ API Key is missing!");
+            return null;
+        }
 
-            const safeKey = fileName.replace(/\./g, '_');
-            const targetUrl = `${FB_BASE_URL}${apiKey}/${safeKey}.json?_=${Date.now()}`;
+        const safeKey = fileName.replace(/\./g, '_');
+        const targetUrl = `${FB_BASE_URL}${apiKey}/${safeKey}.json?_=${Date.now()}`;
 
-            console.log(`🔍 [DEBUG] กำลังดึงข้อมูลจาก: ${FB_BASE_URL}${apiKey}/${safeKey}.json`);
-
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: targetUrl,
-                nocache: true,
-                timeout: 10000,
-                onload: r => {
-                    if (r.status === 200) {
-                        try {
-                            const decodedContent = JSON.parse(r.responseText);
-                            if (decodedContent === null) {
-                                console.error(`❌ ไม่พบข้อมูลใน Firebase! (Path นี้อาจจะไม่มีอยู่จริง: ${apiKey}/${safeKey}.json)`);
-                                resolve(null);
-                                return;
-                            }
-                            resolve(decodedContent);
-                        } catch (e) {
-                            resolve(r.responseText);
-                        }
-                    } else {
-                        console.error("Firebase Error:", r.status, r.responseText);
-                        resolve(null);
-                    }
-                },
-                onerror: () => resolve(null),
-                ontimeout: () => resolve(null)
+        try {
+            const response = await fetch(targetUrl, {
+                method: 'GET',
+                cache: 'no-store'
             });
-        });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data === null) {
+                    console.error(`❌ ไม่พบข้อมูลใน Firebase!`);
+                    return null;
+                }
+                return data;
+            } else if (response.status === 401 || response.status === 403) {
+                alert("❌ API Key ไม่ถูกต้อง หรือไม่มีสิทธิ์เข้าถึง");
+                localStorage.removeItem("API_KEY_FOLDER"); // ล้างรหัส
+                return null;
+            } else {
+                return null;
+            }
+        } catch (error) {
+            console.error("Fetch Error:", error);
+            return null;
+        }
     }
 
     async function fetchAll() {
@@ -236,6 +241,7 @@
         return { intraday, oi, prefix };
     }
 
+    // ================= [ TradingView Data Injector ] =================
     function fillReact(el, data) {
         if (!el || !data) return;
         try {
@@ -372,6 +378,7 @@
                 cachedOI = data.oi;
                 showStatusNotify(true, data.prefix);
             } else {
+                // บน iPad การส่ง Key Event อาจจะไม่ทำงานเสมอไป ใช้การ Click ที่ว่างแทน
                 document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
                 showStatusNotify(true, data.prefix);
             }
@@ -393,6 +400,7 @@
         const hasLegend = document.querySelector('[data-qa-id="legend-source-item"], [class*="sourceItem-"]');
         if (hasLegend) {
             initialLoadComplete = true;
+            createResetKeyButton(); // แสดงปุ่มตั้งค่าเมื่อสคริปต์พร้อมทำงาน
             currentSymbolPrefix = getAssetPrefix();
             setTimeout(() => { autoUpdateRoutine(); }, 1500);
             setInterval(autoUpdateRoutine, UPDATE_INTERVAL_MS);
