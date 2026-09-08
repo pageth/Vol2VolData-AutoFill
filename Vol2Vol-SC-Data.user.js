@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vol2Vol-SC-Data
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  Vol2Vol-SC-Data
 // @match        https://cmegroup-sso.quikstrike.net/*
 // @grant        GM_xmlhttpRequest
@@ -29,10 +29,6 @@
     let FIREBASE_SECRET = getConfig("FIREBASE_SECRET", "");
     let API_KEY_FOLDER = getConfig("API_KEY_FOLDER", "");
 
-    console.log("🚀 CME Vol2Vol Extractor Script Started!");
-
-    // ================= [ Settings Logic ] =================
-    
     function askForCredentials(isError = false) {
         if (isError) alert("⚠️ Firebase แจ้งว่า URL หรือ Secret ผิดพลาด!\nกรุณาตรวจสอบและกรอกข้อมูลใหม่ให้ถูกต้อง");
 
@@ -68,8 +64,6 @@
         setTimeout(() => askForCredentials(false), 2000);
     }
 
-    // ================= [ Helper Functions ] =================
-    
     function getAssetInfo() {
         const params = new URLSearchParams(window.location.search);
         const pid = params.get('pid');
@@ -146,7 +140,7 @@
                 })();
             `;
             document.body.appendChild(script);
-            setTimeout(() => script.remove(), 1000); // ลบโค้ดทิ้งหลังทำงานเสร็จ
+            setTimeout(() => script.remove(), 1000);
         });
     }
 
@@ -191,7 +185,6 @@
             data: JSON.stringify(content),
             onload: function(response) {
                 if (response.status >= 200 && response.status < 300) {
-                    console.log(`✅ อัปโหลด [${filename}] สำเร็จ!`);
                     showNotification(`✅ อัปเดต ${filename} สำเร็จ`);
                 } else if (response.status === 401 || response.status === 400 || response.status === 404) {
                     askForCredentials(true); 
@@ -213,15 +206,13 @@
         async function tryExtract() {
             attempts++;
             const header = getHeaderInfo();
-            const chartData = await extractChartDataAsync(); // ใช้ระบบ Promise แทนการอ่านตรงๆ
+            const chartData = await extractChartDataAsync();
             const filename = `${asset.prefix}${type}Data.txt`; 
 
             if (!chartData || chartData.length === 0) {
                 if (attempts < maxAttempts) {
-                    console.log(`⏳ กราฟ ${type} ยังไม่โหลด รออีก 2 วิ... (ครั้งที่ ${attempts}/${maxAttempts})`);
                     setTimeout(tryExtract, 2000); 
                 } else {
-                    console.warn(`⚠️ ไม่สามารถดึงกราฟ ${type} ได้ ส่งข้อมูลสำรองแทน...`);
                     showNotification(`⚠️ ดึงข้อมูลไม่ได้ ส่ง "${asset.fallback}" แทน`);
                     uploadToFirebase(filename, asset.fallback);
                 }
@@ -229,26 +220,20 @@
             }
 
             const textContent = formatToText(chartData, header.info + "\n" + header.subtitle);
-            console.log(`📊 ดึงข้อมูล ${asset.name} (${type}) สำเร็จ ส่งขึ้น Firebase...`);
             uploadToFirebase(filename, textContent);
         }
 
         setTimeout(tryExtract, 3500);
     }
 
-    // ================= [ Event Listeners ] =================
     ['click', 'touchend'].forEach(evt => {
         document.addEventListener(evt, function(e) {
             
             if (e.target.id === 'refreshButton' || e.target.closest('#refreshButton')) {
                 const currentView = determineCurrentView();
-                const asset = getAssetInfo();
-                
                 if (currentView) {
-                    showNotification(`🔄 รีเฟรช: รออ่านข้อมูล ${asset.name} (${currentView})...`);
+                    showNotification(`🔄 รีเฟรช: รออ่านข้อมูล...`);
                     processAndUpload(currentView);
-                } else {
-                    showNotification(`❌ ไม่สามารถระบุได้ว่าหน้าปัจจุบันคือ Intraday หรือ OI`);
                 }
                 return; 
             }
@@ -258,7 +243,12 @@
 
             const asset = getAssetInfo();
 
-            if (target.id && target.id.endsWith('_lbIntradayVolume')) {
+            if (target.id && target.id.endsWith('_lbChurn')) {
+                showNotification(`🔄 ส่งข้อมูล Churn (Fallback) สำหรับ ${asset.name}...`);
+                uploadToFirebase(`${asset.prefix}IntradayData.txt`, asset.fallback);
+                uploadToFirebase(`${asset.prefix}OIData.txt`, asset.fallback);
+            }
+            else if (target.id && target.id.endsWith('_lbIntradayVolume')) {
                 showNotification(`⏳ กำลังรออ่านข้อมูล ${asset.name} (Intraday)...`);
                 processAndUpload('Intraday');
             } 
