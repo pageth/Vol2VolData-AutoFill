@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vol2Vol-SC-Data
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  Vol2Vol-SC-Data
 // @match        https://cmegroup-sso.quikstrike.net/*
 // @grant        GM_xmlhttpRequest
@@ -68,11 +68,11 @@
         const params = new URLSearchParams(window.location.search);
         const pid = params.get('pid');
         
-        if (pid == '103') return { prefix: 'ES-', name: 'S&P 500', fallback: 'S&P 500 (ES|ES)' };
-        if (pid == '30') return { prefix: 'Oil-', name: 'WTI Crude Oil', fallback: 'WTI Crude Oil (LO|CL)' };
-        if (pid == '40') return { prefix: '', name: 'Gold', fallback: 'Gold (OG|GC)' }; 
+        if (pid == '103') return { prefix: 'ES-', name: 'S&P 500', fallback: 'S&P 500 (ES|ES)', isValid: true };
+        if (pid == '30') return { prefix: 'Oil-', name: 'WTI Crude Oil', fallback: 'WTI Crude Oil (LO|CL)', isValid: true };
+        if (pid == '40') return { prefix: '', name: 'Gold', fallback: 'Gold (OG|GC)', isValid: true }; 
         
-        return { prefix: 'Unknown-', name: 'Unknown Asset', fallback: 'Unknown Asset' };
+        return { prefix: 'Unknown-', name: 'Unknown Asset', fallback: 'Unknown Asset', isValid: false };
     }
 
     function determineCurrentView() {
@@ -199,9 +199,11 @@
     }
 
     function processAndUpload(type) {
+        const asset = getAssetInfo(); 
+        if (!asset.isValid) return;
+
         let attempts = 0;
         const maxAttempts = 5; 
-        const asset = getAssetInfo(); 
 
         async function tryExtract() {
             attempts++;
@@ -230,6 +232,9 @@
         document.addEventListener(evt, function(e) {
             
             if (e.target.id === 'refreshButton' || e.target.closest('#refreshButton')) {
+                const asset = getAssetInfo();
+                if (!asset.isValid) return; 
+
                 const currentView = determineCurrentView();
                 if (currentView) {
                     showNotification(`🔄 รีเฟรช: รออ่านข้อมูล...`);
@@ -242,6 +247,7 @@
             if (!target) return;
 
             const asset = getAssetInfo();
+            if (!asset.isValid) return; 
 
             if (target.id && target.id.endsWith('_lbChurn')) {
                 showNotification(`🔄 ส่งข้อมูล Churn (Fallback) สำหรับ ${asset.name}...`);
