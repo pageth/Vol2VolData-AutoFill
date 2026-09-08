@@ -1,35 +1,45 @@
 // ==UserScript==
 // @name         Vol2Vol-SC-Data
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.5
 // @description  Vol2Vol-SC-Data
 // @match        https://cmegroup-sso.quikstrike.net/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
-// @grant        unsafeWindow
 // @connect      *
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    let FIREBASE_URL = GM_getValue("FIREBASE_URL", "");
-    let FIREBASE_SECRET = GM_getValue("FIREBASE_SECRET", "");
-    let API_KEY_FOLDER = GM_getValue("API_KEY_FOLDER", "");
+    function getConfig(key, defaultVal) {
+        let val = typeof GM_getValue === 'function' ? GM_getValue(key, null) : null;
+        if (!val) val = localStorage.getItem("CME_" + key);
+        return val || defaultVal;
+    }
+
+    function setConfig(key, val) {
+        if (typeof GM_setValue === 'function') GM_setValue(key, val);
+        localStorage.setItem("CME_" + key, val);
+    }
+
+    let FIREBASE_URL = getConfig("FIREBASE_URL", "");
+    let FIREBASE_SECRET = getConfig("FIREBASE_SECRET", "");
+    let API_KEY_FOLDER = getConfig("API_KEY_FOLDER", "");
 
     console.log("🚀 CME Vol2Vol Extractor Script Started!");
 
+    // ================= [ Settings Logic ] =================
+    
     function askForCredentials(isError = false) {
-        if (isError) {
-            alert("⚠️ Firebase แจ้งว่า URL หรือ Secret ผิดพลาด!\nกรุณาตรวจสอบและกรอกข้อมูลใหม่ให้ถูกต้อง");
-        }
+        if (isError) alert("⚠️ Firebase แจ้งว่า URL หรือ Secret ผิดพลาด!\nกรุณาตรวจสอบและกรอกข้อมูลใหม่ให้ถูกต้อง");
 
         let newUrl = prompt("1. กรุณาใส่ FIREBASE_URL\n(ตัวอย่าง: https://my-project.firebaseio.com):", FIREBASE_URL);
         if (newUrl === null) return;
 
-        let newSecret = prompt("2. กรุณาใส่ FIREBASE_SECRET\n(รหัสลับสำหรับเชื่อมต่อฐานข้อมูล):", FIREBASE_SECRET);
+        let newSecret = prompt("2. กรุณาใส่ FIREBASE_SECRET\n(รหัสลับ):", FIREBASE_SECRET);
         if (newSecret === null) return;
 
         let newFolder = prompt("3. กรุณาใส่ API_KEY_FOLDER\n(โฟลเดอร์หลัก):", API_KEY_FOLDER);
@@ -40,9 +50,9 @@
             FIREBASE_SECRET = newSecret.trim();
             API_KEY_FOLDER = newFolder.trim();
 
-            GM_setValue("FIREBASE_URL", FIREBASE_URL);
-            GM_setValue("FIREBASE_SECRET", FIREBASE_SECRET);
-            GM_setValue("API_KEY_FOLDER", API_KEY_FOLDER);
+            setConfig("FIREBASE_URL", FIREBASE_URL);
+            setConfig("FIREBASE_SECRET", FIREBASE_SECRET);
+            setConfig("API_KEY_FOLDER", API_KEY_FOLDER);
             
             showNotification("✅ บันทึกการตั้งค่า Firebase เรียบร้อย!");
         } else {
@@ -50,12 +60,16 @@
         }
     }
 
-    GM_registerMenuCommand("⚙️ ตั้งค่า Firebase URL & Secret", () => askForCredentials(false));
+    if (typeof GM_registerMenuCommand === 'function') {
+        GM_registerMenuCommand("⚙️ ตั้งค่า Firebase URL & Secret", () => askForCredentials(false));
+    }
 
     if (!FIREBASE_URL || !FIREBASE_SECRET || FIREBASE_URL.includes("YOUR-PROJECT")) {
         setTimeout(() => askForCredentials(false), 2000);
     }
 
+    // ================= [ Helper Functions ] =================
+    
     function getAssetInfo() {
         const params = new URLSearchParams(window.location.search);
         const pid = params.get('pid');
@@ -80,7 +94,6 @@
             if (text.includes('intraday')) return 'Intraday';
             if (text.includes('open interest') || text.includes('oi')) return 'OI';
         }
-        
         return null;
     }
 
@@ -93,28 +106,48 @@
         };
     }
 
-    function extractChartData() {
-        const hc = (typeof unsafeWindow !== 'undefined' ? unsafeWindow.Highcharts : window.Highcharts);
-        if (!hc || !hc.charts) return null;
-        
-        const chart = hc.charts.find(c => c && c.series && c.series.some(s => s.name === "Put"));
-        if (!chart) return null;
-
-        const map = {};
-        chart.series.forEach(s => {
-            const n = s.name.trim();
-            const f = n === "Put" ? "put" : (n === "Call" ? "call" : (n === "Vol Settle" ? "volSettle" : ""));
+    function extractChartDataAsync() {
+        return new Promise((resolve) => {
+            const eventId = "ExtractHC_" + Date.now();
             
-            if (f) {
-                (s.points || s.data || []).forEach(p => {
-                    const k = p.category || p.x;
-                    if (!map[k]) map[k] = { strike: k, put: 0, call: 0, volSettle: 0 };
-                    map[k][f] = p.y;
-                });
-            }
+            window.addEventListener(eventId, function(e) {
+                resolve(e.detail);
+            }, { once: true });
+
+            const script = document.createElement('script');
+            script.textContent = `
+                (function() {
+                    try {
+                        const hc = window.Highcharts;
+                        if (!hc || !hc.charts) { window.dispatchEvent(new CustomEvent('${eventId}', { detail: null })); return; }
+                        
+                        const chart = hc.charts.find(c => c && c.series && c.series.some(s => s.name === "Put"));
+                        if (!chart) { window.dispatchEvent(new CustomEvent('${eventId}', { detail: null })); return; }
+
+                        const map = {};
+                        chart.series.forEach(s => {
+                            const n = s.name.trim();
+                            const f = n === "Put" ? "put" : (n === "Call" ? "call" : (n === "Vol Settle" ? "volSettle" : ""));
+                            
+                            if (f) {
+                                (s.points || s.data || []).forEach(p => {
+                                    const k = p.category || p.x;
+                                    if (!map[k]) map[k] = { strike: k, put: 0, call: 0, volSettle: 0 };
+                                    map[k][f] = p.y;
+                                });
+                            }
+                        });
+                        
+                        const result = Object.values(map).sort((a, b) => Number(a.strike) - Number(b.strike));
+                        window.dispatchEvent(new CustomEvent('${eventId}', { detail: result }));
+                    } catch(err) {
+                        window.dispatchEvent(new CustomEvent('${eventId}', { detail: null }));
+                    }
+                })();
+            `;
+            document.body.appendChild(script);
+            setTimeout(() => script.remove(), 1000); // ลบโค้ดทิ้งหลังทำงานเสร็จ
         });
-        
-        return Object.values(map).sort((a, b) => Number(a.strike) - Number(b.strike));
     }
 
     function formatToText(rows, infoTitle) {
@@ -161,15 +194,12 @@
                     console.log(`✅ อัปโหลด [${filename}] สำเร็จ!`);
                     showNotification(`✅ อัปเดต ${filename} สำเร็จ`);
                 } else if (response.status === 401 || response.status === 400 || response.status === 404) {
-                    console.error(`❌ Firebase Error:`, response.responseText);
                     askForCredentials(true); 
                 } else {
-                    console.error(`❌ Upload Error:`, response.responseText);
                     showNotification(`❌ อัปโหลดพลาด (Status: ${response.status})`);
                 }
             },
             onerror: function(err) {
-                console.error(`❌ Network Error:`, err);
                 showNotification(`❌ ไม่สามารถเชื่อมต่อ Firebase ได้`);
             }
         });
@@ -180,10 +210,10 @@
         const maxAttempts = 5; 
         const asset = getAssetInfo(); 
 
-        function tryExtract() {
+        async function tryExtract() {
             attempts++;
             const header = getHeaderInfo();
-            const chartData = extractChartData();
+            const chartData = await extractChartDataAsync(); // ใช้ระบบ Promise แทนการอ่านตรงๆ
             const filename = `${asset.prefix}${type}Data.txt`; 
 
             if (!chartData || chartData.length === 0) {
@@ -191,7 +221,7 @@
                     console.log(`⏳ กราฟ ${type} ยังไม่โหลด รออีก 2 วิ... (ครั้งที่ ${attempts}/${maxAttempts})`);
                     setTimeout(tryExtract, 2000); 
                 } else {
-                    console.warn(`⚠️ ไม่สามารถดึงกราฟ ${type} ได้ กำลังส่งข้อมูลสำรองแทน...`);
+                    console.warn(`⚠️ ไม่สามารถดึงกราฟ ${type} ได้ ส่งข้อมูลสำรองแทน...`);
                     showNotification(`⚠️ ดึงข้อมูลไม่ได้ ส่ง "${asset.fallback}" แทน`);
                     uploadToFirebase(filename, asset.fallback);
                 }
@@ -206,33 +236,37 @@
         setTimeout(tryExtract, 3500);
     }
 
-    document.addEventListener('pointerdown', function(e) {
-        if (e.target.id === 'refreshButton' || e.target.closest('#refreshButton')) {
-            const currentView = determineCurrentView();
-            const asset = getAssetInfo();
+    // ================= [ Event Listeners ] =================
+    ['click', 'touchend'].forEach(evt => {
+        document.addEventListener(evt, function(e) {
             
-            if (currentView) {
-                showNotification(`🔄 รีเฟรช: รออ่านข้อมูล ${asset.name} (${currentView})...`);
-                processAndUpload(currentView);
-            } else {
-                showNotification(`❌ ไม่สามารถระบุได้ว่าหน้าปัจจุบันคือ Intraday หรือ OI`);
+            if (e.target.id === 'refreshButton' || e.target.closest('#refreshButton')) {
+                const currentView = determineCurrentView();
+                const asset = getAssetInfo();
+                
+                if (currentView) {
+                    showNotification(`🔄 รีเฟรช: รออ่านข้อมูล ${asset.name} (${currentView})...`);
+                    processAndUpload(currentView);
+                } else {
+                    showNotification(`❌ ไม่สามารถระบุได้ว่าหน้าปัจจุบันคือ Intraday หรือ OI`);
+                }
+                return; 
             }
-            return; 
-        }
 
-        const target = e.target.closest('a');
-        if (!target) return;
+            const target = e.target.closest('a');
+            if (!target) return;
 
-        const asset = getAssetInfo();
+            const asset = getAssetInfo();
 
-        if (target.id && target.id.endsWith('_lbIntradayVolume')) {
-            showNotification(`⏳ กำลังรออ่านข้อมูล ${asset.name} (Intraday)...`);
-            processAndUpload('Intraday');
-        } 
-        else if (target.id && target.id.endsWith('_lbOI')) {
-            showNotification(`⏳ กำลังรออ่านข้อมูล ${asset.name} (OI)...`);
-            processAndUpload('OI');
-        }
+            if (target.id && target.id.endsWith('_lbIntradayVolume')) {
+                showNotification(`⏳ กำลังรออ่านข้อมูล ${asset.name} (Intraday)...`);
+                processAndUpload('Intraday');
+            } 
+            else if (target.id && target.id.endsWith('_lbOI')) {
+                showNotification(`⏳ กำลังรออ่านข้อมูล ${asset.name} (OI)...`);
+                processAndUpload('OI');
+            }
+        });
     });
 
 })();
