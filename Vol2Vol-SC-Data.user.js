@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         Vol2Vol-SC-Data
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      2.2
 // @description  Vol2Vol-SC-Data
-// @match        https://cmegroup-sso.quikstrike.net/*
+// @match        https://www.cmegroup.com/tools-information/quikstrike/vol2vol-expected-range.html*
+// @match        https://cmegroup-tools.quikstrike.net/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -49,7 +50,7 @@
             setConfig("FIREBASE_URL", FIREBASE_URL);
             setConfig("FIREBASE_SECRET", FIREBASE_SECRET);
             setConfig("API_KEY_FOLDER", API_KEY_FOLDER);
-            
+
             showNotification("✅ บันทึกการตั้งค่า Firebase เรียบร้อย!");
         } else {
             alert("❌ ข้อมูลไม่ครบถ้วน! ระบบอาจจะไม่สามารถส่งข้อมูลได้");
@@ -67,43 +68,39 @@
     function getAssetInfo() {
         const params = new URLSearchParams(window.location.search);
         const pid = params.get('pid');
-        
+
         if (pid == '103') return { prefix: 'ES-', name: 'S&P 500', fallback: 'S&P 500 (ES|ES)', isValid: true };
         if (pid == '30') return { prefix: 'Oil-', name: 'WTI Crude Oil', fallback: 'WTI Crude Oil (LO|CL)', isValid: true };
-        if (pid == '40') return { prefix: '', name: 'Gold', fallback: 'Gold (OG|GC)', isValid: true }; 
-        
+        if (pid == '40') return { prefix: '', name: 'Gold', fallback: 'Gold (OG|GC)', isValid: true };
+
         return { prefix: 'Unknown-', name: 'Unknown Asset', fallback: 'Unknown Asset', isValid: false };
     }
 
-    function determineCurrentView() {
-        const intraBtn = document.querySelector('a[id$="_lbIntradayVolume"]');
-        const oiBtn = document.querySelector('a[id$="_lbOI"]');
-        
-        if (intraBtn && intraBtn.classList.contains('selected')) return 'Intraday';
-        if (oiBtn && oiBtn.classList.contains('selected')) return 'OI';
-
-        const headerInfo = document.querySelector('.viewheader-info.left');
-        if (headerInfo) {
-            const text = headerInfo.innerText.toLowerCase();
-            if (text.includes('intraday')) return 'Intraday';
-            if (text.includes('open interest') || text.includes('oi')) return 'OI';
-        }
-        return null;
-    }
-
+    // ฟังก์ชันค้นหา Header Info จาก Element ต่างๆ ภายใน QuikStrike
     function getHeaderInfo() {
-        const infoEl = document.querySelector('.viewheader-info.left');
-        const subEl = document.querySelector('.highcharts-subtitle');
-        return {
-            info: infoEl ? infoEl.innerText.trim() : "N/A",
-            subtitle: subEl ? subEl.textContent.trim() : "N/A"
-        };
+        // 1. ค้นหาจาก Header คลาสหลักของ QuikStrike
+        const selectors = [
+            '.viewheader-info.left',
+            '.viewheader-info',
+            '#divHeaderInfo',
+            '.highcharts-title'
+        ];
+
+        for (const selector of selectors) {
+            const el = document.querySelector(selector);
+            if (el && el.innerText && el.innerText.trim().length > 0) {
+                // ทำความสะอาดข้อความ ตัดช่องว่างซ้ำซ้อน
+                return el.innerText.replace(/\s+/g, ' ').trim();
+            }
+        }
+
+        return null;
     }
 
     function extractChartDataAsync() {
         return new Promise((resolve) => {
             const eventId = "ExtractHC_" + Date.now();
-            
+
             window.addEventListener(eventId, function(e) {
                 resolve(e.detail);
             }, { once: true });
@@ -114,15 +111,21 @@
                     try {
                         const hc = window.Highcharts;
                         if (!hc || !hc.charts) { window.dispatchEvent(new CustomEvent('${eventId}', { detail: null })); return; }
-                        
+
                         const chart = hc.charts.find(c => c && c.series && c.series.some(s => s.name === "Put"));
                         if (!chart) { window.dispatchEvent(new CustomEvent('${eventId}', { detail: null })); return; }
+
+                        // หากหา Header จาก DOM ไม่เจอ ให้ลองดึง title จาก Highcharts Options
+                        let chartTitle = "";
+                        if (chart.title && chart.title.textStr) {
+                            chartTitle = chart.title.textStr;
+                        }
 
                         const map = {};
                         chart.series.forEach(s => {
                             const n = s.name.trim();
                             const f = n === "Put" ? "put" : (n === "Call" ? "call" : (n === "Vol Settle" ? "volSettle" : ""));
-                            
+
                             if (f) {
                                 (s.points || s.data || []).forEach(p => {
                                     const k = p.category || p.x;
@@ -131,9 +134,11 @@
                                 });
                             }
                         });
-                        
-                        const result = Object.values(map).sort((a, b) => Number(a.strike) - Number(b.strike));
-                        window.dispatchEvent(new CustomEvent('${eventId}', { detail: result }));
+
+                        const rows = Object.values(map).sort((a, b) => Number(a.strike) - Number(b.strike));
+                        window.dispatchEvent(new CustomEvent('${eventId}', {
+                            detail: { rows: rows, chartTitle: chartTitle }
+                        }));
                     } catch(err) {
                         window.dispatchEvent(new CustomEvent('${eventId}', { detail: null }));
                     }
@@ -148,7 +153,7 @@
         var lines = [];
         if (infoTitle) lines.push(infoTitle);
         lines.push("Strike,Call,Put,Vol Settle");
-        
+
         for (var i = 0; i < rows.length; i++) {
             var r = rows[i];
             lines.push([
@@ -164,11 +169,11 @@
     function showNotification(msg) {
         let toast = document.createElement('div');
         toast.innerText = msg;
-        toast.style.cssText = "position:fixed; bottom:20px; right:20px; background:#333; color:#fff; padding:10px 20px; border-radius:5px; z-index:99999; font-family:sans-serif; box-shadow: 0 4px 6px rgba(0,0,0,0.3); font-size:14px;";
+        toast.style.cssText = "position:fixed; bottom:20px; right:20px; background:#333; color:#fff; padding:10px 20px; border-radius:5px; z-index:999999; font-family:sans-serif; box-shadow: 0 4px 6px rgba(0,0,0,0.3); font-size:14px;";
         document.body.appendChild(toast);
         setTimeout(() => toast.remove(), 4000);
     }
-    
+
     function uploadToFirebase(filename, content) {
         if (!FIREBASE_URL || !FIREBASE_SECRET) {
             askForCredentials(false);
@@ -187,7 +192,7 @@
                 if (response.status >= 200 && response.status < 300) {
                     showNotification(`✅ อัปเดต ${filename} สำเร็จ`);
                 } else if (response.status === 401 || response.status === 400 || response.status === 404) {
-                    askForCredentials(true); 
+                    askForCredentials(true);
                 } else {
                     showNotification(`❌ อัปโหลดพลาด (Status: ${response.status})`);
                 }
@@ -198,22 +203,26 @@
         });
     }
 
-    function processAndUpload(type) {
-        const asset = getAssetInfo(); 
-        if (!asset.isValid) return;
+    function processAndUpload() {
+        const asset = getAssetInfo();
+
+        if (!asset.isValid) {
+            showNotification(`⚠️ ไม่รู้จักโปรดักต์ (Unknown Asset) - ยกเลิกการส่งข้อมูล`);
+            return;
+        }
 
         let attempts = 0;
-        const maxAttempts = 5; 
+        const maxAttempts = 5;
 
         async function tryExtract() {
             attempts++;
-            const header = getHeaderInfo();
-            const chartData = await extractChartDataAsync();
-            const filename = `${asset.prefix}${type}Data.txt`; 
+            const res = await extractChartDataAsync();
+            const filename = `${asset.prefix}OIData.txt`;
 
+            const chartData = res ? res.rows : null;
             if (!chartData || chartData.length === 0) {
                 if (attempts < maxAttempts) {
-                    setTimeout(tryExtract, 2000); 
+                    setTimeout(tryExtract, 2000);
                 } else {
                     showNotification(`⚠️ ดึงข้อมูลไม่ได้ ส่ง "${asset.fallback}" แทน`);
                     uploadToFirebase(filename, asset.fallback);
@@ -221,48 +230,49 @@
                 return;
             }
 
-            const textContent = formatToText(chartData, header.info + "\n" + header.subtitle);
+            // ค้นหาส่วนหัว: ถ้าหาใน DOM ไม่เจอ ให้ใช้ Title จาก Highcharts ถ้ายังไม่เจอจึง Fallback
+            let headerText = getHeaderInfo();
+            if (!headerText && res && res.chartTitle) {
+                headerText = res.chartTitle;
+            }
+            if (!headerText) {
+                headerText = asset.fallback;
+            }
+
+            const textContent = formatToText(chartData, headerText);
             uploadToFirebase(filename, textContent);
         }
 
-        setTimeout(tryExtract, 3500);
+        setTimeout(tryExtract, 1000);
     }
 
-    ['click', 'touchend'].forEach(evt => {
-        document.addEventListener(evt, function(e) {
-            
-            if (e.target.id === 'refreshButton' || e.target.closest('#refreshButton')) {
-                const asset = getAssetInfo();
-                if (!asset.isValid) return; 
+    function createFloatingButton() {
+        if (document.getElementById('vol2vol-extract-btn')) return;
 
-                const currentView = determineCurrentView();
-                if (currentView) {
-                    showNotification(`🔄 รีเฟรช: รออ่านข้อมูล...`);
-                    processAndUpload(currentView);
-                }
-                return; 
-            }
+        let btn = document.createElement('button');
+        btn.id = 'vol2vol-extract-btn';
+        btn.innerText = '📤 ส่งข้อมูล Vol2Vol';
+        btn.style.cssText = 'position:fixed; bottom:20px; left:20px; background:#007bff; color:#fff; padding:12px 18px; border:none; border-radius:5px; cursor:pointer; z-index:999999; font-weight:bold; font-size:14px; box-shadow:0 4px 6px rgba(0,0,0,0.3); transition: background 0.3s;';
 
-            const target = e.target.closest('a');
-            if (!target) return;
+        btn.onmouseover = () => btn.style.background = '#0056b3';
+        btn.onmouseout = () => btn.style.background = '#007bff';
 
+        btn.onclick = (e) => {
+            e.preventDefault();
             const asset = getAssetInfo();
-            if (!asset.isValid) return; 
+            if(!asset.isValid) {
+                 showNotification(`⚠️ ไม่รู้จักโปรดักต์ (Unknown Asset)`);
+                 return;
+            }
+            showNotification(`⏳ กำลังอ่านข้อมูลกราฟ ${asset.name}...`);
+            processAndUpload();
+        };
 
-            if (target.id && target.id.endsWith('_lbChurn')) {
-                showNotification(`🔄 ส่งข้อมูล Churn (Fallback) สำหรับ ${asset.name}...`);
-                uploadToFirebase(`${asset.prefix}IntradayData.txt`, asset.fallback);
-                uploadToFirebase(`${asset.prefix}OIData.txt`, asset.fallback);
-            }
-            else if (target.id && target.id.endsWith('_lbIntradayVolume')) {
-                showNotification(`⏳ กำลังรออ่านข้อมูล ${asset.name} (Intraday)...`);
-                processAndUpload('Intraday');
-            } 
-            else if (target.id && target.id.endsWith('_lbOI')) {
-                showNotification(`⏳ กำลังรออ่านข้อมูล ${asset.name} (OI)...`);
-                processAndUpload('OI');
-            }
-        });
-    });
+        document.body.appendChild(btn);
+    }
+
+    if (window.location.hostname === "cmegroup-tools.quikstrike.net") {
+        createFloatingButton();
+    }
 
 })();
