@@ -252,7 +252,7 @@
         let btn = document.createElement('button');
         btn.id = 'vol2vol-extract-btn';
         btn.innerText = '📤 ส่งข้อมูล Vol2Vol';
-        btn.style.cssText = 'position:fixed; top:20px; left:20px; background:#007bff; color:#fff; padding:12px 18px; border:none; border-radius:5px; cursor:pointer; z-index:999999; font-weight:bold; font-size:14px; box-shadow:0 4px 6px rgba(0,0,0,0.3); transition: background 0.3s;';
+        btn.style.cssText = 'position:fixed; bottom:20px; left:20px; background:#007bff; color:#fff; padding:12px 18px; border:none; border-radius:5px; cursor:pointer; z-index:999999; font-weight:bold; font-size:14px; box-shadow:0 4px 6px rgba(0,0,0,0.3); transition: background 0.3s;';
 
         btn.onmouseover = () => btn.style.background = '#0056b3';
         btn.onmouseout = () => btn.style.background = '#007bff';
