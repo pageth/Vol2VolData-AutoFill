@@ -276,7 +276,7 @@
         let panel = document.createElement('div');
         panel.id = 'tv-vol2vol-panel';
         panel.style.cssText = `
-            position: fixed; bottom: 20px; left: 20px; z-index: 999999;
+            position: fixed; top: 80px; left: 20px; z-index: 999999;
             background: rgba(30, 34, 45, 0.85); backdrop-filter: blur(8px);
             border: 1px solid #434651; border-radius: 30px;
             display: flex; align-items: center; padding: 6px 14px;
