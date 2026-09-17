@@ -167,7 +167,7 @@
     }
 
     function formatToText(rows, infoTitle) {
-        var lines = [infoTitle, "Strike,Call,Put,Vol Settle"];
+        var lines = [infoTitle, "Strike,Call,Put,IV"];
         rows.forEach(r => lines.push([r.strike || "", r.call || "0", r.put || "0", r.volSettle || "0.0000"].join(",")));
         return lines.join("\r\n");
     }
